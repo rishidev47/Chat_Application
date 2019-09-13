@@ -11,6 +11,9 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
+import java.security.MessageDigest;
+
 import javax.crypto.Cipher;
 
 public class TCPClient{
@@ -137,7 +140,7 @@ public class TCPClient{
             String inputfromuser=inFromUser.readLine();
             if(inputfromuser.equals(""))continue;
             String[] userResponse_ARR=inputfromuser.split(" ",2);
-            if(inputfromuser.charAt(0)=='@'&& userResponse_ARR.length==2 && inputfromuser.charAt(1)!='@'){
+            if(inputfromuser.charAt(0)=='@'&& userResponse_ARR.length==2 && inputfromuser.charAt(1)!='@' && userResponse_ARR[1].length()<=53){
 
                 userResponse_ARR=inputfromuser.split(" ",2);
                 String recipient=userResponse_ARR[0].replace("@","");
@@ -152,25 +155,30 @@ public class TCPClient{
                     char[] encodedPubKey = new char[keyLength];
                     inFromServerSEND.read(encodedPubKey, 0, keyLength);
 
-
-                    // int i=userResponse_ARR[1].length();
-                    // while(i>53){
-
-                    // }
-
-
-
                     byte[] pubKey = java.util.Base64.getDecoder().decode(new String(encodedPubKey));
                     byte[] encryptedMessage = CryptographyExample.encrypt(pubKey, message.getBytes());
+                    String encodedContent = java.util.Base64.getEncoder().encodeToString(encryptedMessage);
+                    int contentLength =encodedContent.length();
 
-                    String encryptedContent = java.util.Base64.getEncoder().encodeToString(encryptedMessage);
-                    int contentLength =encryptedContent.length();
-
-                    String send="SEND "+recipient+"\n"+
-                                "Content-length: "+contentLength+"\n\n"+
-                                encryptedContent;
+                    MessageDigest md = MessageDigest.getInstance("SHA-256");
+                    byte[] shaBytes = md.digest(encryptedMessage);
+                    byte[] encryptedSignature=null;
                     
-                                outToSEND.writeBytes(send);
+                    try {
+                        encryptedSignature = CryptographySignatureExample.encrypt(privateKey, shaBytes);
+                    } catch (Exception e) {
+                        System.out.println(e);
+                    }
+                    String encodedSignature = java.util.Base64.getEncoder().encodeToString(encryptedSignature);
+                    int sigContentLenght =encodedSignature.length();
+                    
+                    String send="SEND "+recipient+"\n"+
+                                "Content-length: "+contentLength+"\n"+
+                                "signature-lenght: "+sigContentLenght+"\n\n"+
+                                encodedContent + encodedSignature;
+
+                    outToSEND.writeBytes(send);
+
 
                     String serverResponse=inFromServerSEND.readLine(); inFromServerSEND.readLine();
                     String[] serverResponse_ARR=serverResponse.split(" ");
@@ -185,6 +193,9 @@ public class TCPClient{
                             }
                             else if(serverResponse_ARR[1].equals("103")){
                                 System.out.println("Header Incomplete");
+                            }
+                            else if(serverResponse_ARR[1].equals("106")){
+                                System.out.println("Message Tempered");
                             }
                             break;
                         default:
@@ -230,21 +241,62 @@ class ReceiveMessages extends Thread{
 
                 if(headerLine1_ARR[0].equals("FORWARD")){
 
-                    String[] headerLine2_ARR = inFromServerRECV.readLine().split(" "); inFromServerRECV.readLine();
+                    String[] headerLine2_ARR = inFromServerRECV.readLine().split(" "); 
+                    String[] headerLine3_ARR = inFromServerRECV.readLine().split(" ");
+
                     int contentLength=Integer.parseInt(headerLine2_ARR[1]);
+                    int sigContentLength= Integer.parseInt(headerLine3_ARR[1]);
+                    inFromServerRECV.readLine();
 
                     char[] temp=new char[contentLength]; inFromServerRECV.read(temp, 0, contentLength);
-                    byte[] encryptedContent= java.util.Base64.getDecoder().decode(new String(temp));
+                    char[] temp1=new char[sigContentLength]; inFromServerRECV.read(temp1, 0, sigContentLength);
+                    byte[] decodedContent= java.util.Base64.getDecoder().decode(new String(temp));
+                    byte[] decodedSignature = java.util.Base64.getDecoder().decode(new String(temp1));
                     String messageContent="";
+ 
+                    String reqToFetchKey="FETCHKEY "+headerLine1_ARR[1]+"\n\n";
+                    
+                    outToRECV.writeBytes(reqToFetchKey);
 
+                    
+
+                    String[] fetchKeyResponse = inFromServerRECV.readLine().split(" ");
+                    int keyLength=Integer.parseInt(fetchKeyResponse[0]);
+                    char[] encodedPubKey = new char[keyLength];
+                    inFromServerRECV.read(encodedPubKey, 0, keyLength);
+                    
+                    byte[] pubKey = java.util.Base64.getDecoder().decode(new String(encodedPubKey));
+                    
+                    byte[] decryptedSignature=null;
                     try {
-                        messageContent = new String(CryptographyExample.decrypt(privateKey, encryptedContent));
+                        decryptedSignature = CryptographySignatureExample.decrypt(pubKey, decodedSignature);
                     } catch (Exception e) {
                         System.out.println(e);
                     }
+                    
+                    boolean messageIsIntegrated=false;
+                    try {
+                        MessageDigest md = MessageDigest.getInstance("SHA-256");
+                        byte[] shaBytes = md.digest(decodedContent);
+                        messageIsIntegrated = Arrays.equals(decryptedSignature, shaBytes);
+                    } catch (Exception e) {
+                        System.out.println(e);
+                    }
+                    
 
-                    System.out.println("Message From "+headerLine1_ARR[1]+": "+messageContent);
-                    outToRECV.writeBytes("RECEIVED "+headerLine1_ARR[1]+"\n\n");
+                    if(messageIsIntegrated){
+                        try {
+                            messageContent = new String(CryptographyExample.decrypt(privateKey, decodedContent));
+                            System.out.println("Message From "+headerLine1_ARR[1]+": "+messageContent);
+                            outToRECV.writeBytes("RECEIVED "+headerLine1_ARR[1]+"\n\n");
+                        } catch (Exception e) {
+                            System.out.println(e);
+                        }
+                    }
+                    else{
+                        outToRECV.writeBytes("ERROR 105 Message Tempered\n\n");
+                    }
+                    
 
                 }
                 else{
@@ -274,6 +326,56 @@ class CryptographyExample {
     public static byte[] decrypt(byte[] privateKey, byte[] inputData)throws Exception {
 
         PrivateKey key = KeyFactory.getInstance(ALGORITHM).generatePrivate(new PKCS8EncodedKeySpec(privateKey));
+        Cipher cipher = Cipher.getInstance(ALGORITHM);
+        cipher.init(Cipher.DECRYPT_MODE, key);
+        byte[] decryptedBytes = cipher.doFinal(inputData);
+        return decryptedBytes;
+    }
+
+    public static KeyPair generateKeyPair()throws NoSuchAlgorithmException, NoSuchProviderException {
+
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
+        SecureRandom random = SecureRandom.getInstance("SHA1PRNG", "SUN");
+        keyGen.initialize(512, random);
+        KeyPair generateKeyPair = keyGen.generateKeyPair();
+        return generateKeyPair;
+    }
+
+    // public static void main(String[] args) throws Exception {
+
+    //     KeyPair generateKeyPair = generateKeyPair();
+	//     byte[] publicKey = generateKeyPair.getPublic().getEncoded();
+    //     byte[] privateKey = generateKeyPair.getPrivate().getEncoded();
+
+    //     byte[] encryptedData = encrypt(publicKey,
+    //             ("Hey").getBytes());
+                
+    //     byte[] decryptedData = decrypt(privateKey, encryptedData);
+
+    //     System.out.println(new String(encryptedData));
+    //     System.out.println(new String(decryptedData));
+
+
+    // }
+
+}
+
+class CryptographySignatureExample {
+
+    private static final String ALGORITHM = "RSA";
+
+    public static byte[] encrypt(byte[] privateKey, byte[] inputData)throws Exception {
+
+        PrivateKey key = KeyFactory.getInstance(ALGORITHM).generatePrivate(new PKCS8EncodedKeySpec(privateKey));
+        Cipher cipher = Cipher.getInstance(ALGORITHM);
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        byte[] encryptedBytes = cipher.doFinal(inputData);
+        return encryptedBytes;
+    }
+
+    public static byte[] decrypt(byte[] publicKey, byte[] inputData)throws Exception {
+
+        PublicKey key = KeyFactory.getInstance(ALGORITHM).generatePublic(new X509EncodedKeySpec(publicKey));
         Cipher cipher = Cipher.getInstance(ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, key);
         byte[] decryptedBytes = cipher.doFinal(inputData);
