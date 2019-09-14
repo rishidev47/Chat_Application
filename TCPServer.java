@@ -4,21 +4,18 @@ import java.util.Hashtable;
 
 
 public class TCPServer {
-
+    private String mode;
     private Socket clientSocket = null; 
     private ServerSocket serverSocket = null; 
     private BufferedReader inFromClient = null;
     private DataOutputStream outToClient = null;
-    public Hashtable<String, Socket> sendingSockets = null;
-    public Hashtable<String, Socket> receivingSockets = null;
     public Hashtable<String, Hashtable<String, Object>> database = null;
 
-    public TCPServer(int port) {        
+    public TCPServer(int port, String mode) {        
         try {   
+            this.mode=mode;
             serverSocket = new ServerSocket(port);
-            sendingSockets = new Hashtable<>();
-            receivingSockets = new Hashtable<>();
-            database =new Hashtable<>();
+            database =new Hashtable<String, Hashtable<String, Object>>();
         } catch(SocketException i) { 
             System.out.println(i); 
         }  catch(IOException i) {
@@ -32,7 +29,7 @@ public class TCPServer {
                 clientSocket = serverSocket.accept(); 
                 inFromClient = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 outToClient = new DataOutputStream(clientSocket.getOutputStream());
-                ManageClient manager=new ManageClient(this, clientSocket, inFromClient, outToClient);
+                ManageClient manager=new ManageClient(this, clientSocket, inFromClient, outToClient, mode);
                 manager.start();
             } catch(IOException i) { 
                 System.out.println(i);
@@ -40,33 +37,170 @@ public class TCPServer {
         } 
     } 
     
-    public static void main(String argv[]) throws Exception  { 
-        TCPServer server = new TCPServer(6789);
+    public static void main(String argv[]) throws Exception  {
+        BufferedReader inFromUser = new BufferedReader(new InputStreamReader(System.in)); 
+        String mode = "";
+        while (true) {
+            System.out.print("Enter Application Mode: ");
+            mode = inFromUser.readLine();
+            if (mode.equals("1") || mode.equals("2") || mode.equals("3"))
+                break;
+            else
+                continue;
+        }
+        inFromUser.close();
+        TCPServer server = new TCPServer(6789,mode);
         server.listenToRequest();
     } 
 }
 
 class ManageClient extends Thread {
+    private String mode;
     private String currentUser;
     private TCPServer server = null;
     private Socket clientSocket = null;
     private BufferedReader inFromClient = null;
     private DataOutputStream outToClient = null;
 
-    public ManageClient(TCPServer server, Socket clientSocket, BufferedReader inFromClient, DataOutputStream outToClient){
+    public ManageClient(TCPServer server, Socket clientSocket, BufferedReader inFromClient, DataOutputStream outToClient, String mode){
+        this.mode=mode;
         this.server=server;
         this.clientSocket=clientSocket;
         this.inFromClient=inFromClient;
         this.outToClient=outToClient;
     }
     
+    void unregister(){
+        if(server.database.get(currentUser)!=null){
+            server.database.remove(currentUser);
+        }
+        System.out.println("User "+currentUser+" Unregistered");
+        this.stop();
+    }
+
+    void forwardMessage(String recipient) throws IOException {
+        String[] headerLine2_ARR=inFromClient.readLine().split(" ");
+        inFromClient.readLine();
+        int contentLength=Integer.parseInt(headerLine2_ARR[1]);
+        //char[] messageContent=new char[contentLength];
+        //inFromClient.read(messageContent, 0, contentLength);
+        String send="FORWARD "+currentUser+"\n"+
+                    "Content-length: "+contentLength+"\n\n"+
+                    readSomeByte(contentLength, inFromClient);
+
+        Hashtable<String, Object> table = server.database.get(recipient);
+        if(table==null){
+            outToClient.writeBytes("ERROR 102 Unable to send\n\n");
+            return;           
+        }
+        else{
+            Socket sendTo = (Socket)table.get("recvSocket");
+            if(sendTo!=null){
+                DataOutputStream outToRecipient=new DataOutputStream(sendTo.getOutputStream());
+                outToRecipient.writeBytes(send);
+                BufferedReader inFromRecipient=new BufferedReader(new InputStreamReader(sendTo.getInputStream()));
+
+                String[] recipientResponse=inFromRecipient.readLine().split(" "); 
+                inFromRecipient.readLine();
+                if(recipientResponse[0].equals("RECEIVED") && recipientResponse[1].equals(currentUser)){
+                    outToClient.writeBytes("SENT "+recipient +"\n\n");
+                }
+                else if((recipientResponse[0]+recipientResponse[1]).equals("ERROR 103")){
+                    outToClient.writeBytes("ERROR 103 Header incomplete\n\n");
+                }
+            }
+            else{
+                outToClient.writeBytes("ERROR 102 Unable to send\n\n");
+                return;
+            }
+            
+        }
+    }
+    
+    void forwardMessageWithSignature(String sender) throws IOException {
+        String[] headerLine2_ARR=inFromClient.readLine().split(" ");
+        String[] headerLine3_ARR = inFromClient.readLine().split(" ");
+        inFromClient.readLine();
+
+        int contentLength_3=Integer.parseInt(headerLine2_ARR[1]);
+        int sigContentLength= Integer.parseInt(headerLine3_ARR[1]);
+
+        //char[] messageContent_3=new char[contentLength_3]; inFromClient.read(messageContent_3, 0, contentLength_3);
+        //char[] signature=new char[sigContentLength]; inFromClient.read(signature, 0, sigContentLength);
+        String messsage1=readSomeByte(contentLength_3, inFromClient);
+        String signature1=readSomeByte(sigContentLength, inFromClient);
+        String send_3="FORWARD "+currentUser+"\n"+
+                    "Content-length: "+contentLength_3+"\n"+
+                    "signature-lenght: "+sigContentLength+"\n\n"+
+                    messsage1 + signature1;
+
+        Hashtable<String, Object> table_3 = server.database.get(sender);
+        if(table_3==null){
+            outToClient.writeBytes("ERROR 102 Unable to send\n\n");
+            return;           
+        }
+        else{
+            Socket sendTo = (Socket)table_3.get("recvSocket");
+            if(sendTo!=null){
+                DataOutputStream outToRecipient=new DataOutputStream(sendTo.getOutputStream());
+                outToRecipient.writeBytes(send_3);
+                BufferedReader inFromRecipient=new BufferedReader(new InputStreamReader(sendTo.getInputStream()));
+                String fKey_3=getPubKey(inFromRecipient.readLine().split(" ")[1]);
+                if(fKey_3!=null){
+                    inFromRecipient.readLine();
+                    outToRecipient.writeBytes(fKey_3.length()+"\n"+fKey_3);
+                }
+                else{
+                    outToClient.writeBytes("ERROR 105 "+sender+"\n");
+                    return;
+                }
+
+                String[] recipientResponse=inFromRecipient.readLine().split(" "); inFromRecipient.readLine();
+
+                if(recipientResponse[0].equals("RECEIVED") && recipientResponse[1].equals(currentUser)){
+                    outToClient.writeBytes("SENT "+sender+"\n\n");  
+                }
+                else if((recipientResponse[0]+recipientResponse[1]).equals("ERROR 103")){
+                    outToClient.writeBytes("ERROR 103 Header incomplete\n\n");
+                }
+                else if((recipientResponse[0]+recipientResponse[1]).equals("ERROR 106")){
+                    outToClient.writeBytes("ERROR 105 Message Tempered\n\n");
+                }
+            }
+            else{
+                outToClient.writeBytes("ERROR 102 Unable to send\n\n");
+                return;
+            }
+        }
+    }
+
+    String readSomeByte(int len, BufferedReader reader) throws IOException{
+        int temp=0;
+        String ret="";
+        while(temp!=len){
+            int t = reader.read();
+            if(t!=-1){
+                char c=(char)t;
+                ret=ret+c;
+                temp++;
+            }
+        }
+        return ret;
+    }
+    
     @Override
     public void run() {
-
         while (true) {
             try {   
-                String[] headerLine1_ARR=inFromClient.readLine().split(" ");
+                String s=inFromClient.readLine();
+                System.out.println(s);
+                String[] headerLine1_ARR=s.split(" ");
                 switch (headerLine1_ARR[0]) {
+                    case "UNREGISTER":
+                        inFromClient.readLine();
+                        unregister();
+                        break;
+
                     case "FETCHKEY":
                         inFromClient.readLine();
                         String fetchedKey=getPubKey(headerLine1_ARR[1]);
@@ -77,28 +211,63 @@ class ManageClient extends Thread {
                             outToClient.writeBytes("ERROR 105 "+headerLine1_ARR[1]+"\n");
                         }
                         break;
-                    case "REGISTER":
-                        
-                        if(headerLine1_ARR[1].equals("TOSEND")){
-                            if(checkUsernameFormat(headerLine1_ARR[2])){
-                                int keylength = Integer.parseInt(inFromClient.readLine()); inFromClient.readLine();
-                                char[] pubKey = new char[keylength];
-                                inFromClient.read(pubKey, 0, keylength);
 
-                                if(saveSender(headerLine1_ARR[2], new String(pubKey))){
-                                    currentUser=headerLine1_ARR[2];
-                                    outToClient.writeBytes("REGISTERED TOSEND "+headerLine1_ARR[2]+"\n\n");
-                                }else{
-                                    outToClient.writeBytes("ERROR 111 "+headerLine1_ARR[2]+"\n\n");
+                    case "REGISTER":
+
+                        if(headerLine1_ARR[1].equals("TOSEND")){
+                            if(!headerLine1_ARR[2].equals(mode)){
+                                if(!headerLine1_ARR[2].equals("1")){
+                                    int keyLength = Integer.parseInt(inFromClient.readLine()); 
+                                    inFromClient.readLine();
+                                    //char[] pubKey = new char[keylength];
+                                    //inFromClient.read(pubKey, 0, keylength);
+                                    readSomeByte(keyLength, inFromClient);
                                 }
-                            }else{
-                                int keylength = Integer.parseInt(inFromClient.readLine()); inFromClient.readLine();
-                                char[] pubKey = new char[keylength];
-                                inFromClient.read(pubKey, 0, keylength);
+                                else{
+                                    inFromClient.readLine();
+                                }
+                                outToClient.writeBytes("ERROR 120 Mode Missmatch "+mode+"\n\n");
+                                break;
+                            }
+                            if(checkUsernameFormat(headerLine1_ARR[3]) && headerLine1_ARR.length==4){
                                 
-                                outToClient.writeBytes("ERROR 100 "+headerLine1_ARR[2]+"\n\n");
+                                if(!mode.equals("1")){
+                                    int keyLength = Integer.parseInt(inFromClient.readLine()); 
+                                    inFromClient.readLine();
+                                    //char[] pubKey = new char[keylength];
+                                    //inFromClient.read(pubKey, 0, keylength);
+                                    if(saveSender(headerLine1_ARR[3], readSomeByte(keyLength, inFromClient))){
+                                        currentUser=headerLine1_ARR[3];
+                                        outToClient.writeBytes("REGISTERED TOSEND "+headerLine1_ARR[3]+"\n\n");
+                                    }else{
+                                        outToClient.writeBytes("ERROR 111 "+headerLine1_ARR[3]+"\n\n");
+                                    }
+                                }
+                                else{
+                                    inFromClient.readLine();
+                                    if(saveSender(headerLine1_ARR[3])){
+                                        currentUser=headerLine1_ARR[3];
+                                        outToClient.writeBytes("REGISTERED TOSEND "+headerLine1_ARR[3]+"\n\n");
+                                    }else{
+                                        outToClient.writeBytes("ERROR 111 "+headerLine1_ARR[3]+"\n\n");
+                                    }
+                                }
+                                
+                            }else{
+                                if(!mode.equals("1")){
+                                    int keyLength = Integer.parseInt(inFromClient.readLine()); 
+                                    inFromClient.readLine();
+                                    //char[] pubKey = new char[keylength];
+                                    //inFromClient.read(pubKey, 0, keylength);
+                                    readSomeByte(keyLength, inFromClient);
+                                }
+                                else{
+                                    inFromClient.readLine();
+                                }
+                                outToClient.writeBytes("ERROR 100 "+headerLine1_ARR[3]+"\n\n");
                             }
                         }
+
                         else if(headerLine1_ARR[1].equals("TORECV")){
                             inFromClient.readLine();
                             if(checkUsernameFormat(headerLine1_ARR[2])){
@@ -115,72 +284,44 @@ class ManageClient extends Thread {
                             this.stop();
                         }
                         break;
+
                     case "SEND":
-                        String[] headerLine2_ARR=inFromClient.readLine().split(" ");
-                        String[] headerLine3_ARR = inFromClient.readLine().split(" ");
-                        inFromClient.readLine();
-
-                        int contentLength=Integer.parseInt(headerLine2_ARR[1]);
-                        int sigContentLength= Integer.parseInt(headerLine3_ARR[1]);
-
-                        char[] messageContent=new char[contentLength]; inFromClient.read(messageContent, 0, contentLength);
-                        char[] signature=new char[sigContentLength]; inFromClient.read(signature, 0, sigContentLength);
-                        String messsage1=new String(messageContent);
-                        String signature1=new String(signature);
-                        String send="FORWARD "+currentUser+"\n"+
-                                    "Content-length: "+contentLength+"\n"+
-                                    "signature-lenght: "+sigContentLength+"\n\n"+
-                                    messsage1 + signature1;
-
-                        Hashtable<String, Object> table = server.database.get(headerLine1_ARR[1]);
-                        if(table==null){
-                            outToClient.writeBytes("ERROR 102 Unable to send\n\n");
-                            break;           
-                        }
-                        else{
-                            Socket sendTo = (Socket)table.get("recvSocket");
-                            if(sendTo!=null){
-                                DataOutputStream outToRecipient=new DataOutputStream(sendTo.getOutputStream());
-                                outToRecipient.writeBytes(send);
-                                BufferedReader inFromRecipient=new BufferedReader(new InputStreamReader(sendTo.getInputStream()));
-                                String fKey=getPubKey(inFromRecipient.readLine().split(" ")[1]);
-                                if(fKey!=null){
-                                    inFromRecipient.readLine();
-                                    outToRecipient.writeBytes(fKey.length()+"\n"+fKey);
-                                }
-                                else{
-                                    outToClient.writeBytes("ERROR 105 "+headerLine1_ARR[1]+"\n");
+                        try {
+                            switch (mode) {
+                                case "1":
+                                    
+                                    forwardMessage(headerLine1_ARR[1]);
                                     break;
-                                }
-
-                                String[] recipientResponse=inFromRecipient.readLine().split(" "); inFromRecipient.readLine();
-
-                                if(recipientResponse[0].equals("RECEIVED") && recipientResponse[1].equals(currentUser)){
-                                    outToClient.writeBytes("SENT "+headerLine1_ARR[1]+"\n\n");  
-                                }
-                                else if((recipientResponse[0]+recipientResponse[1]).equals("ERROR 103")){
-                                    outToClient.writeBytes("ERROR 103 Header incomplete\n\n");
-                                }
-                                else if((recipientResponse[0]+recipientResponse[1]).equals("ERROR 106")){
-                                    outToClient.writeBytes("ERROR 105 Message Tempered\n\n");
-                                }
+                                
+                                case "2":
+                                    forwardMessage(headerLine1_ARR[1]);
+                                    
+                                    break;
+                                case "3":
+                                    forwardMessageWithSignature(headerLine1_ARR[1]);
+    
+                                    break;
+                                  
+                                default:
+                                    break;
                             }
-                            else{
-                                outToClient.writeBytes("ERROR 102 Unable to send\n\n");
-                                break;
-                            }
-                            break; 
+                            break;
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            break;
                         }
-
                     default:
                         outToClient.writeBytes("ERROR 101 No user registered\n\n");
                         break;
                 }
+
             } catch(IOException | NullPointerException i) {
-                if(server.database.get(currentUser)!=null){
-                    server.database.remove(currentUser);
-                }
-                System.out.println("User "+currentUser+" Abruptly Disconnected");
+                if(currentUser!=null){
+                    if(server.database.get(currentUser)!=null){
+                        server.database.remove(currentUser);
+                        System.out.println("User "+currentUser+" Abruptly Disconnected");
+                    }
+                }           
                 this.stop();
             } 
         }
@@ -200,6 +341,29 @@ class ManageClient extends Thread {
     
     boolean checkUsernameFormat(String username){
         return username.matches("[a-zA-Z0-9]*");
+    }
+    
+    boolean saveSender(String userName){
+
+        //Socket socket=server.sendingSockets.get(userName);
+        Socket sendSocket;
+        Hashtable<String, Object> table = server.database.get(userName);
+        if(table==null){
+            table = new Hashtable<>();
+            table.put("sendSocket",clientSocket);;
+            server.database.put(userName,table);
+            return true;
+        }
+        else{
+            sendSocket = (Socket)server.database.get(userName).get("sendSocket");
+            if(sendSocket==null){
+                //server.sendingSockets.put(userName, clientSocket);
+                table.put("sendSocket",clientSocket);
+                return true;
+            }
+            
+        }
+        return false;
     }
     
     boolean saveSender(String userName, String pubKey){
