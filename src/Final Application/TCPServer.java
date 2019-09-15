@@ -38,11 +38,13 @@ public class TCPServer {
     } 
     
     public static void main(String argv[]) throws Exception  {
+        System.out.println("Enter the number corrosponding to the mode in which you want to run the application\n"+
+                            "1. Unencrypted\n2. Encrypted\n3. Encrypted with Signature");
         BufferedReader inFromUser = new BufferedReader(new InputStreamReader(System.in)); 
         String mode = "";
         while (true) {
-            System.out.print("Enter Application Mode: ");
-            mode = inFromUser.readLine();
+            System.out.print("Mode: ");
+            mode = inFromUser.readLine().trim();
             if (mode.equals("1") || mode.equals("2") || mode.equals("3"))
                 break;
             else
@@ -193,7 +195,7 @@ class ManageClient extends Thread {
         while (true) {
             try {   
                 String s=inFromClient.readLine();
-                System.out.println(s);
+                if(s!=null)System.out.println(s);
                 String[] headerLine1_ARR=s.split(" ");
                 switch (headerLine1_ARR[0]) {
                     case "UNREGISTER":
@@ -315,7 +317,7 @@ class ManageClient extends Thread {
                         break;
                 }
 
-            } catch(IOException | NullPointerException i) {
+            } catch(Exception i) {  //IOException | NullPointerException
                 if(currentUser!=null){
                     if(server.database.get(currentUser)!=null){
                         server.database.remove(currentUser);

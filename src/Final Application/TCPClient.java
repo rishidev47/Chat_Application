@@ -31,6 +31,19 @@ public class TCPClient {
     private KeyPair generateKeyPair = null; // = generateKeyPair();
     private byte[] publicKey = null; // = generateKeyPair.getPublic().getEncoded();
     private byte[] privateKey = null; // = generateKeyPair.getPrivate().getEncoded();
+    private static String s=
+    "'   .----------------. .----------------. .----------------. .----------------. .----------------. .----------------. .----------------. .----------------. \n"+
+    "'  | .--------------. | .--------------. | .--------------. | .--------------. | .--------------. | .--------------. | .--------------. | .--------------. |\n"+
+    "'  | |     ______   | | |  ____  ____  | | |      __      | | |  _________   | | |              | | |      __      | | |   ______     | | |   ______     | |\n"+
+    "'  | |   .' ___  |  | | | |_   ||   _| | | |     / \\     | | | |  _   _  |  | | |              | | |     /  \\     | | |  |_   __ \\   | | |  |_   __ \\   | |\n"+
+    "'  | |  / .'   \\_|  | | |   | |__| |   | | |    / /\\\\    | | | |_/ | |  \\_|  | | |    ______    | | |   / /\\\\    | | |    | |__) |  | | |    | |__) |  | |\n"+
+    "'  | |  | |         | | |   |  __  |   | | |   / ____\\\\   | | |     | |      | | |   |______|   | | |   / ____ \\   | | |    |  ___/   | | |    |  ___/   | |\n"+
+    "'  | |  \\ `.___.'\\  | | |  _| |  | |_  | | | _/ /   \\\\_ | | |    _| |_     | | |              | | | _/ /    \\ \\_ | | |   _| |_      | | |   _| |_      | |\n"+
+    "'  | |   `._____.'  | | | |____||____| | | ||____|  |____|| | |   |_____|    | | |              | | ||____|  |____|| | |  |_____|     | | |  |_____|     | |\n"+
+    "'  | |              | | |              | | |              | | |              | | |              | | |              | | |              | | |              | |\n"+
+    "'  | '--------------' | '--------------' | '--------------' | '--------------' | '--------------' | '--------------' | '--------------' | '--------------' |\n"+
+    "'   '----------------' '----------------' '----------------' '----------------' '----------------' '----------------' '----------------' '----------------' \n";
+
 
     public TCPClient(String username, String serverIP, BufferedReader inFromUser, String mode, int serverPort) {
         this.serverPort=serverPort;
@@ -311,14 +324,16 @@ public class TCPClient {
     }
 
     public static void main(String argv[]) throws Exception {
-        System.out.println("");
+        System.out.println("Enter the number corrosponding to the mode in which you want to run the application\n"+
+                            "1. Unencrypted\n2. Encrypted\n3. Encrypted with Signature");
         BufferedReader inFromUser = new BufferedReader(new InputStreamReader(System.in));
+        String mode = "";
         String username = "";
         String serverIP = "";
-        String mode = "";
+        
         while (true) {
-            System.out.print("Enter Application Mode: ");
-            mode = inFromUser.readLine();
+            System.out.print("Mode: ");
+            mode = inFromUser.readLine().trim();
             if (mode.equals("1") || mode.equals("2") || mode.equals("3"))
                 break;
             else
@@ -326,21 +341,22 @@ public class TCPClient {
         }
         while (true) {
             System.out.print("Username: ");
-            username = inFromUser.readLine();
-            if (username.trim().equals(""))
+            username = inFromUser.readLine().trim();
+            if (username.equals(""))
                 continue;
             else
                 break;
         }
         while (true) {
             System.out.print("Server IP address: ");
-            serverIP = inFromUser.readLine();
-            if (serverIP.trim().equals(""))
+            serverIP = inFromUser.readLine().trim();
+            if (serverIP.equals(""))
                 continue;
             else
                 break;
         }
-        TCPClient client = new TCPClient(username.trim(), serverIP, inFromUser, mode, 6789);
+        System.out.println("You Can Terminate this application anytime by typing \"unregister\" without quotes and pressing enter.\n");
+        TCPClient client = new TCPClient(username, serverIP, inFromUser, mode, 6789);
         client.register();
 
     }
@@ -561,23 +577,6 @@ class CryptographyExample {
         return generateKeyPair;
     }
 
-    // public static void main(String[] args) throws Exception {
-
-    //     KeyPair generateKeyPair = generateKeyPair();
-	//     byte[] publicKey = generateKeyPair.getPublic().getEncoded();
-    //     byte[] privateKey = generateKeyPair.getPrivate().getEncoded();
-
-    //     byte[] encryptedData = encrypt(publicKey,
-    //             ("Hey").getBytes());
-                
-    //     byte[] decryptedData = decrypt(privateKey, encryptedData);
-
-    //     System.out.println(new String(encryptedData));
-    //     System.out.println(new String(decryptedData));
-
-
-    // }
-
 }
 
 class CryptographySignatureExample {
@@ -610,22 +609,4 @@ class CryptographySignatureExample {
         KeyPair generateKeyPair = keyGen.generateKeyPair();
         return generateKeyPair;
     }
-
-    // public static void main(String[] args) throws Exception {
-
-    //     KeyPair generateKeyPair = generateKeyPair();
-	//     byte[] publicKey = generateKeyPair.getPublic().getEncoded();
-    //     byte[] privateKey = generateKeyPair.getPrivate().getEncoded();
-
-    //     byte[] encryptedData = encrypt(publicKey,
-    //             ("Hey").getBytes());
-                
-    //     byte[] decryptedData = decrypt(privateKey, encryptedData);
-
-    //     System.out.println(new String(encryptedData));
-    //     System.out.println(new String(decryptedData));
-
-
-    // }
-
 }

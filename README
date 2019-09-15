@@ -1,0 +1,49 @@
+There are two applications :
+	1.Client Application
+	2.Server Application
+These Applications can run in given three modes :
+	1.Unencrypted
+	2.Encrypted
+	3.Encrypted with Signature
+Incase of Unencrypted mode messages are not not encrypted and send over server as it is in string format. The server can actually read the content of message. 
+
+For Encrypted case the message is encrypted by the sender and then sent over to the server. Now this encrypted message can not be decrypted by server so server can not read the content of the message.
+
+In Encrypted with Signature mode along with the encrypted message the sender sends a signature to ensure the receiver that this message is being originally sent by the sender.
+
+To run the application follow these steps:
+
+You need to compile the files in the src folder using
+javac TCPServer.java
+javac TCPClient.java
+
+First you need to run the Server application in one terminal.
+Then run the Client application on other terminal.
+
+SERVER APPLICATION:
+	To run the SERVER application open a terminal in src folder and run the following command:
+	java TCPServer
+
+	Then SERVER will start and ask for the mode in which you want to run the application. Modes are:
+	1. Unencrypted Mode
+	2. Encrypted Mode
+	3. Encryption with Signature
+	Then type 1, 2, 3 depending on the mode you want to run the server and press enter.
+
+	NOTE that the server will ONLY ACCEPT the REGISTER request of the Client running in same mode. Any connection request from Client running on different mode will be rejected.
+
+CLIENT APPLICATION:
+	To run the CLIENT application open a terminal in src folder and run the following command:
+	java TCPClient.
+
+	Then CLIENT will start and ask for the mode in which you want to run the application. Modes are:
+	1. Unencrypted Mode
+	2. Encrypted Mode
+	3. Encryption with Signature
+	Then type 1, 2, 3 depending on the mode you want to run the server and press enter.
+
+	Then CLIENT will ask for username. NOTE that username can ONLY contain alphabets and numbers without spaces. Type your username and press enter.
+	Then CLIENT will ask for IP Address of the SERVER. Type the IP address where SERVER is running. If it is on the same device type "localhost" without quotes.
+	NOTE that the server will ONLY ACCEPT the REGISTER request of the Client running in same mode. So if you get response that server is running in different mode then restart the application in that mode.
+	If everything goes well you will receive registration successful message. Otherwise application will inform you of any Error.
+	You can send a message to the users connected to THE SAME SERVER you are connected by writing as "@usertosend message" where "usertosend" is the username of the user you want to send the message. Add "@" before the username.
